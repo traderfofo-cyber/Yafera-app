@@ -1,128 +1,72 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-from datetime import datetime
 
-# Config
-st.set_page_config(page_title="Yafera Pro v3.3", page_icon="🐂", layout="wide")
+st.set_page_config(page_title="Yafera Pro", page_icon="🐂")
 
-# Connexion
+st.title("🐂 Yafera Pro - Gestion de Ferme")
+
+# Connexion au Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# Fonction de lecture ultra-robuste
-def safe_read(sheet_name):
-    try:
-        df = conn.read(worksheet=sheet_name, ttl="0")
-        return df if df is not None else pd.DataFrame()
-    except:
-        return pd.DataFrame()
+# Menu latéral
+menu = ["BOVINS", "DÉPENSES", "JOURNAL"]
+choix = st.sidebar.selectbox("Menu", menu)
 
-# Navigation
-with st.sidebar:
-    st.title("YAFERA PRO v3.3")
-    page = st.radio("MENU", ["📊 BILAN", "🐂 TROUPEAU", "💸 DÉPENSES", "📝 JOURNAL"])
-
-# ---------------------------------------------------------
-# PAGE DÉPENSES (Version ultra-simplifiée pour éviter l'erreur)
-# ---------------------------------------------------------
-if page == "💸 DÉPENSES":
-    st.header("💸 Gestion des Dépenses")
-    
-    with st.form("form_dep", clear_on_submit=True):
-        cat = st.selectbox("Type", ["Aliment", "Santé/Vétérinaire", "Transport", "Main d'oeuvre", "Autre"])
-        m = st.number_input("Montant (FCFA)", min_value=0, step=500)
-        dt = st.date_input("Date", datetime.now())
-        note = st.text_input("Commentaire")
-        submit = st.form_submit_button("ENREGISTRER")
+# --- SECTION BOVINS ---
+if choix == "BOVINS":
+    st.subheader("Enregistrer un nouveau Bovin")
+    with st.form("bovin_form"):
+        nom = st.text_input("Nom ou Numéro du Bouvier")
+        race = st.selectbox("Race", ["Zébu", "Charolais", "Métis", "Autre"])
+        prix_achat = st.number_input("Prix d'achat (F CFA)", min_value=0)
+        date_achat = st.date_input("Date d'achat")
+        date_vente_prevue = st.date_input("Date de vente prévue")
+        submit = st.form_submit_button("ENREGISTRER LE BOVIN")
         
-        if submit and m > 0:
-            try:
-                # On récupère l'existant
-                existing_df = safe_read("Depenses")
-                # On crée la nouvelle ligne
-                new_data = pd.DataFrame([{"Type": cat, "Montant": m, "Date": str(dt), "Note": note}])
-                # On fusionne
-                updated_df = pd.concat([existing_df, new_data], ignore_index=True)
-                # On écrase proprement la feuille avec les nouvelles données
-                conn.update(worksheet="Depenses", data=updated_df)
-                st.success(f"C'est noté : {m} F pour {cat}")
-                st.cache_data.clear()
-            except Exception as e:
-                st.error(f"Erreur technique : {e}. Vérifie que l'onglet 'Depenses' existe bien dans ton Google Sheets.")
+        if submit:
+            new_data = pd.DataFrame([{"Nom": nom, "Race": race, "Prix Achat": prix_achat, "Date Achat": str(date_achat), "Date Vente": str(date_vente_prevue)}])
+            old_data = conn.read(worksheet="Bovins")
+            updated_df = pd.concat([old_data, new_data], ignore_index=True)
+            conn.update(worksheet="Bovins", data=updated_df)
+            st.success(f"Bovin {nom} enregistré avec succès !")
 
-# ---------------------------------------------------------
-# PAGE BILAN
-# ---------------------------------------------------------
-elif page == "📊 BILAN":
-    st.header("📊 Tableau de Bord")
-    df_b = safe_read("Bovins")
-    df_d = safe_read("Depenses")
-    
-    c1, c2, c3, c4 = st.columns(4)
-    
-    # Calculs avec gestion des erreurs si colonnes absentes
-    presents = df_b[df_b['Statut'] == 'Présent'] if 'Statut' in df_b.columns else pd.DataFrame()
-    vendus = df_b[df_b['Statut'] == 'Vendu'] if 'Statut' in df_b.columns else pd.DataFrame()
-    
-    prof = pd.to_numeric(vendus['Profit'], errors='coerce').sum() if 'Profit' in vendus.columns else 0
-    deps = pd.to_numeric(df_d['Montant'], errors='coerce').sum() if 'Montant' in df_d.columns else 0
-    val = pd.to_numeric(presents['Prix Achat'], errors='coerce').sum() if 'Prix Achat' in presents.columns else 0
-    
-    c1.metric("Bœufs au parc", len(presents))
-    c2.metric("Valeur Stock (F)", f"{val:,.0f}")
-    c3.metric("Profit Ventes (F)", f"{prof:,.0f}")
-    c4.metric("BÉNÉFICE NET (F)", f"{prof - deps:,.0f}")
-    
-    st.dataframe(df_b, use_container_width=True)
+# --- SECTION DÉPENSES ---
+elif choix == "DÉPENSES":
+    st.subheader("Nouvelle Dépense")
+    with st.form("depense_form"):
+        categorie = st.selectbox("Catégorie", ["Aliment", "Santé", "Transport", "Main d'œuvre", "Autre"])
+        montant = st.number_input("Montant (F CFA)", min_value=0)
+        date_depense = st.date_input("Date")
+        # Champ commentaire agrandi
+        commentaire = st.text_area("Commentaire / Détails de la dépense")
+        submit = st.form_submit_button("ENREGISTRER LA DÉPENSE")
+        
+        if submit:
+            new_depense = pd.DataFrame([{"Date": str(date_depense), "Categorie": categorie, "Montant": montant, "Commentaire": commentaire}])
+            # On lit l'onglet "Depenses"
+            old_depenses = conn.read(worksheet="Depenses")
+            updated_depenses = pd.concat([old_depenses, new_depense], ignore_index=True)
+            conn.update(worksheet="Depenses", data=updated_depenses)
+            st.success(f"C'est noté : {montant} F pour {categorie}")
 
-# ---------------------------------------------------------
-# PAGE TROUPEAU
-# ---------------------------------------------------------
-elif page == "🐂 TROUPEAU":
-    st.header("🐂 Gestion du Troupeau")
-    t1, t2 = st.tabs(["➕ ACHAT", "💰 VENTE"])
+# --- SECTION JOURNAL ---
+elif choix == "JOURNAL":
+    st.subheader("Historique des activités")
     
-    with t1:
-        with st.form("f_a", clear_on_submit=True):
-            nom = st.text_input("Nom/ID")
-            pa = st.number_input("Prix d'Achat", min_value=0)
-            desc = st.text_area("Description")
-            dt_a = st.date_input("Date d'Achat", datetime.now())
-            if st.form_submit_button("VALIDER ACHAT"):
-                df = safe_read("Bovins")
-                new = pd.DataFrame([{"Nom": nom, "Description": desc, "Prix Achat": pa, "Date Achat": str(dt_a), "Statut": "Présent", "Profit": 0}])
-                conn.update(worksheet="Bovins", data=pd.concat([df, new], ignore_index=True))
-                st.success("Bœuf enregistré")
-                st.cache_data.clear()
+    tab1, tab2 = st.tabs(["Liste des Bovins", "Historique des Dépenses"])
+    
+    with tab1:
+        st.write("### Vos Animaux")
+        df_bovins = conn.read(worksheet="Bovins")
+        st.dataframe(df_bovins)
 
-    with t2:
-        df_v = safe_read("Bovins")
-        if not df_v.empty and 'Statut' in df_v.columns:
-            presents_list = df_v[df_v['Statut'] == 'Présent']['Nom'].tolist()
-            if presents_list:
-                choix = st.selectbox("Vendre quel bœuf ?", presents_list)
-                pv = st.number_input("Prix de Vente", min_value=0)
-                if st.button("CONFIRMER LA VENTE"):
-                    idx = df_v[df_v['Nom'] == choix].index[0]
-                    df_v.at[idx, 'Statut'] = 'Vendu'
-                    df_v.at[idx, 'Prix Vente'] = pv
-                    df_v.at[idx, 'Profit'] = pv - df_v.at[idx, 'Prix Achat']
-                    conn.update(worksheet="Bovins", data=df_v)
-                    st.success("Vente réussie !")
-                    st.cache_data.clear()
-            else: st.info("Aucun bœuf présent.")
-        else: st.info("Le registre est vide.")
+    with tab2:
+        st.write("### Vos Dépenses")
+        df_depenses = conn.read(worksheet="Depenses")
+        # On affiche les dépenses les plus récentes en haut
+        if not df_depenses.empty:
+            st.dataframe(df_depenses.iloc[::-1])
+        else:
+            st.info("Aucune dépense enregistrée pour le moment.")
 
-# ---------------------------------------------------------
-# PAGE JOURNAL
-# ---------------------------------------------------------
-elif page == "📝 JOURNAL":
-    st.header("📝 Journal")
-    note_j = st.text_area("Observations...")
-    if st.button("ENREGISTRER AU JOURNAL"):
-        df_j = safe_read("Journal")
-        new_j = pd.DataFrame([{"Date": str(datetime.now().date()), "Commentaire": note_j}])
-        conn.update(worksheet="Journal", data=pd.concat([df_j, new_j], ignore_index=True))
-        st.success("Note ajoutée")
-        st.cache_data.clear()
-    st.dataframe(safe_read("Journal"), use_container_width=True)
