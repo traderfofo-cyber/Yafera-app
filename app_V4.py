@@ -3,242 +3,135 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 from fpdf import FPDF
+import io
 
 # ---------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------
-st.set_page_config(
-    page_title="Yafera Pro v4.0",
-    page_icon="🐂",
-    layout="wide"
-)
+st.set_page_config(page_title="Yafera Pro v4.1 (TEST)", page_icon="🧪", layout="wide")
 
-# ---------------------------------------------------------
-# DESIGN GLOBAL
-# ---------------------------------------------------------
-st.markdown("""
-<style>
-body {background-color:#f4f6f9;}
-.big-title {font-size:38px;font-weight:700;color:#2e7d32;}
-.card {
-    background-color:white;
-    padding:20px;
-    border-radius:15px;
-    box-shadow:0 4px 10px rgba(0,0,0,0.1);
-    margin-bottom:20px;
-}
-</style>
-""", unsafe_allow_html=True)
-
-st.image(
-    "https://images.unsplash.com/photo-1605472560824-24c52acbf8d2",
-    use_container_width=True
-)
-
-st.markdown(
-    '<div class="big-title">🐂 YAFERA PRO – Gestion d’Embouche</div>',
-    unsafe_allow_html=True
-)
-
-# ---------------------------------------------------------
-# CONNEXION GOOGLE SHEETS
-# ---------------------------------------------------------
+# Connexion
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def safe_read(sheet):
     try:
         df = conn.read(worksheet=sheet, ttl="0")
         return df if df is not None else pd.DataFrame()
-    except:
+    except Exception as e:
         return pd.DataFrame()
 
 # ---------------------------------------------------------
-# SIDEBAR : MENU + PROJET
+# SIDEBAR
 # ---------------------------------------------------------
 with st.sidebar:
-    st.title("YAFERA PRO v4.0")
-
-    projet = st.selectbox(
-        "📁 PROJET ACTIF",
-        ["Embouche Yafera 1", "Embouche Yafera 2"]
-    )
-
-    page = st.radio("MENU", [
-        "📊 BILAN",
-        "📈 COMPARATIF",
-        "🐂 TROUPEAU",
-        "💸 DÉPENSES",
-        "📝 JOURNAL"
-    ])
+    st.header("⚙️ Paramètres")
+    projet = st.selectbox("📁 PROJET ACTIF", ["Yafera 1", "Yafera 2", "Test Elevage"])
+    page = st.radio("MENU", ["📊 BILAN", "🐂 TROUPEAU", "💸 DÉPENSES", "📝 JOURNAL"])
 
 # ---------------------------------------------------------
 # PAGE TROUPEAU
 # ---------------------------------------------------------
 if page == "🐂 TROUPEAU":
-    st.header("🐂 Gestion du Troupeau")
-
-    t1, t2 = st.tabs(["➕ NOUVEL ACHAT", "💰 ENREGISTRER UNE VENTE"])
+    st.subheader(f"Gestion du Troupeau - {projet}")
+    t1, t2 = st.tabs(["➕ ACHAT", "💰 VENTE"])
 
     with t1:
         with st.form("achat", clear_on_submit=True):
-            nom = st.text_input("Nom / Numéro du Bœuf")
-            pa = st.number_input("Prix d’Achat (FCFA)", min_value=0)
-            dt = st.date_input("Date d’Achat", datetime.now())
-            desc = st.text_area("Description")
-            if st.form_submit_button("AJOUTER"):
+            nom = st.text_input("Nom / ID du Bœuf")
+            pa = st.number_input("Prix d'Achat (FCFA)", min_value=0)
+            dt = st.date_input("Date d'Achat", datetime.now())
+            desc = st.text_area("Notes")
+            if st.form_submit_button("ENREGISTRER L'ACHAT"):
                 df = safe_read("Bovins")
-                new = pd.DataFrame([{
-                    "Projet": projet,
-                    "Nom": nom,
-                    "Description": desc,
-                    "Prix Achat": pa,
-                    "Date Achat": str(dt),
-                    "Statut": "Présent",
-                    "Prix Vente": 0,
-                    "Date Vente": "-",
-                    "Profit": 0
-                }])
-                conn.update("Bovins", pd.concat([df, new], ignore_index=True))
-                st.success("Bœuf ajouté")
+                new = pd.DataFrame([{"Projet": projet, "Nom": nom, "Description": desc, "Prix Achat": pa, "Date Achat": str(dt), "Statut": "Présent", "Prix Vente": 0, "Date Vente": "-", "Profit": 0}])
+                conn.update(worksheet="Bovins", data=pd.concat([df, new], ignore_index=True))
+                st.success("Bœuf ajouté !")
 
     with t2:
         df = safe_read("Bovins")
-        df = df[df["Projet"] == projet]
-
-        presents = df[df["Statut"] == "Présent"]["Nom"].tolist()
-
-        if presents:
-            choix = st.selectbox("Bœuf vendu", presents)
-            pv = st.number_input("Prix de Vente", min_value=0)
-            dv = st.date_input("Date de Vente", datetime.now())
-
-            if st.button("CONFIRMER LA VENTE"):
-                i = df[df["Nom"] == choix].index[0]
-                df.at[i, "Statut"] = "Vendu"
-                df.at[i, "Prix Vente"] = pv
-                df.at[i, "Date Vente"] = str(dv)
-                df.at[i, "Profit"] = pv - df.at[i, "Prix Achat"]
-                conn.update("Bovins", df)
-                st.success("Vente enregistrée")
-        else:
-            st.info("Aucun bœuf présent")
+        if not df.empty and "Projet" in df.columns:
+            presents = df[(df["Projet"] == projet) & (df["Statut"] == "Présent")]["Nom"].tolist()
+            if presents:
+                choix = st.selectbox("Sélectionner le bœuf à vendre", presents)
+                pv = st.number_input("Prix de Vente", min_value=0)
+                dv = st.date_input("Date de Vente", datetime.now())
+                if st.button("VALIDER LA VENTE"):
+                    idx = df[df["Nom"] == choix].index[0]
+                    df.at[idx, "Statut"] = "Vendu"
+                    df.at[idx, "Prix Vente"] = pv
+                    df.at[idx, "Date Vente"] = str(dv)
+                    df.at[idx, "Profit"] = pv - df.at[idx, "Prix Achat"]
+                    conn.update(worksheet="Bovins", data=df)
+                    st.success("Vente enregistrée !")
+            else: st.info("Aucun bœuf présent.")
 
 # ---------------------------------------------------------
 # PAGE DÉPENSES
 # ---------------------------------------------------------
 elif page == "💸 DÉPENSES":
-    st.header("💸 Dépenses du Projet")
-
+    st.subheader(f"Dépenses - {projet}")
     with st.form("dep", clear_on_submit=True):
         cat = st.selectbox("Type", ["Aliment", "Santé", "Transport", "Main d’œuvre", "Autre"])
-        m = st.number_input("Montant", min_value=0)
+        m = st.number_input("Montant (FCFA)", min_value=0)
         d = st.date_input("Date", datetime.now())
-        note = st.text_area("Commentaire")
+        note = st.text_area("Détails")
         if st.form_submit_button("ENREGISTRER"):
             df = safe_read("Depenses")
-            new = pd.DataFrame([{
-                "Projet": projet,
-                "Type": cat,
-                "Montant": m,
-                "Date": str(d),
-                "Note": note
-            }])
-            conn.update("Depenses", pd.concat([df, new], ignore_index=True))
+            new = pd.DataFrame([{"Projet": projet, "Type": cat, "Montant": m, "Date": str(d), "Note": note}])
+            conn.update(worksheet="Depenses", data=pd.concat([df, new], ignore_index=True))
             st.success("Dépense ajoutée")
-
-    st.dataframe(
-        safe_read("Depenses")[lambda x: x["Projet"] == projet],
-        use_container_width=True
-    )
 
 # ---------------------------------------------------------
 # PAGE BILAN
 # ---------------------------------------------------------
 elif page == "📊 BILAN":
-    st.header(f"📊 Bilan – {projet}")
-
+    st.subheader(f"Bilan - {projet}")
     df_b = safe_read("Bovins")
     df_d = safe_read("Depenses")
 
-    df_b = df_b[df_b["Projet"] == projet]
-    df_d = df_d[df_d["Projet"] == projet]
+    if not df_b.empty and "Projet" in df_b.columns:
+        df_b_proj = df_b[df_b["Projet"] == projet]
+        df_d_proj = df_d[df_d["Projet"] == projet] if not df_d.empty else pd.DataFrame()
 
-    presents = df_b[df_b["Statut"] == "Présent"]
-    vendus = df_b[df_b["Statut"] == "Vendu"]
+        invest = pd.to_numeric(df_b_proj["Prix Achat"], errors="coerce").sum()
+        ventes = pd.to_numeric(df_b_proj["Prix Vente"], errors="coerce").sum()
+        frais = pd.to_numeric(df_d_proj["Montant"], errors="coerce").sum() if not df_d_proj.empty else 0
+        
+        benef_net = ventes - (invest + frais)
+        roi = (benef_net / invest * 100) if invest > 0 else 0
 
-    profit = pd.to_numeric(vendus["Profit"], errors="coerce").sum()
-    dep = pd.to_numeric(df_d["Montant"], errors="coerce").sum()
-    invest = pd.to_numeric(df_b["Prix Achat"], errors="coerce").sum()
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Investissement", f"{invest:,.0f} F")
+        c2.metric("Bénéfice Net", f"{benef_net:,.0f} F")
+        c3.metric("ROI", f"{roi:.1f} %")
 
-    net = profit - dep
-    roi = (net / invest * 100) if invest > 0 else 0
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Bœufs au parc", len(presents))
-    c2.metric("Investissement", f"{invest:,.0f} F")
-    c3.metric("Bénéfice Net", f"{net:,.0f} F")
-    c4.metric("ROI", f"{roi:.2f} %")
-
-    if st.button("📄 Télécharger le bilan PDF"):
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", "B", 16)
-        pdf.cell(0, 10, f"Bilan – {projet}", ln=True)
-        pdf.set_font("Arial", "", 12)
-        pdf.cell(0, 10, f"Bénéfice Net : {net} FCFA", ln=True)
-        pdf.cell(0, 10, f"ROI : {roi:.2f} %", ln=True)
-        pdf.output("bilan.pdf")
-        st.download_button("⬇️ Télécharger", open("bilan.pdf", "rb"), "bilan.pdf")
-
-# ---------------------------------------------------------
-# PAGE COMPARATIF
-# ---------------------------------------------------------
-elif page == "📈 COMPARATIF":
-    st.header("📈 Comparatif des Projets")
-
-    df_b = safe_read("Bovins")
-    df_d = safe_read("Depenses")
-
-    data = []
-
-    for p in df_b["Projet"].unique():
-        b = df_b[df_b["Projet"] == p]
-        d = df_d[df_d["Projet"] == p]
-
-        profit = pd.to_numeric(b[b["Statut"] == "Vendu"]["Profit"], errors="coerce").sum()
-        dep = pd.to_numeric(d["Montant"], errors="coerce").sum()
-        invest = pd.to_numeric(b["Prix Achat"], errors="coerce").sum()
-        roi = (profit - dep) / invest * 100 if invest > 0 else 0
-
-        data.append({
-            "Projet": p,
-            "Bénéfice Net": profit - dep,
-            "ROI (%)": round(roi, 2)
-        })
-
-    df_c = pd.DataFrame(data)
-    st.dataframe(df_c, use_container_width=True)
-    st.bar_chart(df_c.set_index("Projet"))
+        if st.button("📄 Rapport PDF"):
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", "B", 16)
+            pdf.cell(200, 10, f"BILAN - {projet}", ln=True, align='C')
+            pdf.set_font("Arial", "", 12)
+            pdf.ln(10)
+            pdf.cell(200, 10, f"Profit Net: {benef_net:,.0f} FCFA", ln=True)
+            pdf_output = pdf.output(dest='S').encode('latin-1')
+            st.download_button(label="⬇️ Télécharger", data=pdf_output, file_name=f"Bilan_{projet}.pdf", mime="application/pdf")
+    else:
+        st.warning("Aucune donnée.")
 
 # ---------------------------------------------------------
-# PAGE JOURNAL
+# PAGE JOURNAL (Correction de la ligne 153)
 # ---------------------------------------------------------
 elif page == "📝 JOURNAL":
-    st.header("📝 Journal du Projet")
-
-    note = st.text_area("Nouvelle note")
-    if st.button("AJOUTER"):
+    st.subheader(f"Journal - {projet}")
+    note = st.text_area("Observation...")
+    if st.button("ENREGISTRER"):
         df = safe_read("Journal")
-        new = pd.DataFrame([{
-            "Projet": projet,
-            "Date": str(datetime.now().date()),
-            "Commentaire": note
-        }])
-        conn.update("Journal", pd.concat([df, new], ignore_index=True))
+        new = pd.DataFrame([{"Projet": projet, "Date": str(datetime.now().date()), "Commentaire": note}])
+        conn.update(worksheet="Journal", data=pd.concat([df, new], ignore_index=True))
         st.success("Note enregistrée")
-
-    st.dataframe(
-        safe_read("Journal")[lambda x: x["Projet"] == projet],
-        use_container_width=True
-    )
+    
+    df_j = safe_read("Journal")
+    if not df_j.empty and "Projet" in df_j.columns:
+        # ICI ETAIT L'ERREUR : Bien fermer la parenthèse )
+        st.table(df_j[df_j["Projet"] == projet].iloc[::-1])
 
