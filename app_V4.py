@@ -44,7 +44,12 @@ if page == "🐂 TROUPEAU":
             if st.form_submit_button("ENREGISTRER L'ACHAT"):
                 df = safe_read("Bovins")
                 new = pd.DataFrame([{"Projet": projet, "Nom": nom, "Description": desc, "Prix Achat": pa, "Date Achat": str(dt), "Statut": "Présent", "Prix Vente": 0, "Date Vente": "-", "Profit": 0}])
-                conn.update(worksheet="Bovins", data=pd.concat([df, new], ignore_index=True))
+              df = safe_read("Bovins")
+                new_data = pd.DataFrame([{"Projet": projet, "Nom": nom, "Description": desc, "Prix Achat": pa, "Date Achat": str(dt), "Statut": "Présent", "Prix Vente": 0, "Date Vente": "-", "Profit": 0}])
+                updated_df = pd.concat([df, new_data], ignore_index=True)
+                conn.update(worksheet="Bovins", data=updated_df)
+                st.success("Bœuf ajouté !")
+                st.rerun()
                 st.success("Bœuf ajouté !")
 
     with t2:
